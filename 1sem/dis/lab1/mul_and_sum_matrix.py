@@ -1,7 +1,7 @@
 import numpy as np
 import argparse
 from ThreadManager import multithr_calculator
-
+import time
 
 
 def read_matrix_from_file(fname, shape=(4,4)):
@@ -31,9 +31,12 @@ if __name__ =="__main__":
     parser = create_parser()
     args = parser.parse_args()
 
+    t_start = time.time()
     thread_manager = multithr_calculator(args.thread_number)
     thread_manager.start_threads()
     for matrix in read_matrix_from_file(args.file_name):
         thread_manager.add_new_matrix(matrix)
 
     print(thread_manager.get_result())
+    t_end = time.time()
+    print("Total elapsed time:{}".format(t_end - t_start))
