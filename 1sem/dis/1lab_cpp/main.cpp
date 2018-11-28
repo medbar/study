@@ -48,6 +48,7 @@ public:
 
 
 std::mutex out_lock;
+std::mutex all_matrix_lock;
 void anyFunc(block_write_queue<std::pair<int,int>> * q, std::vector<matrix*> *data_ptr, matrix * out_matrix, int shape) {
     std::vector<matrix*>& data =  *data_ptr;
 
@@ -58,16 +59,15 @@ void anyFunc(block_write_queue<std::pair<int,int>> * q, std::vector<matrix*> *da
             std::pair<int,int> task = q->pop();
             //matrix m[] = {data[task.first], data[task.second]};
             matrix result_matrix = matrix(shape, shape);
+
+            all_matrix_lock.unlock();
+            matrix *xm = data[task.first];
+            matrix *ym = data[task.second];
+            all_matrix_lock.unlock();
             for (size_t i = 0; i < shape; i++)
                 for (size_t j = 0; j < shape; j++) {
                     int c = 0;
                     for (size_t g=0; g < shape; g++){
-                        int xi = i*shape + g;
-                        int yi = g*shape + j;
-                        int xo = task.first;
-                        int yo = task.second;
-                        matrix *xm = data[xo];
-                        matrix *ym = data[yo];
                         int x = xm->data[i*shape + g];
                         int y = ym->data[g*shape + j];
                         c+=x*y ;
@@ -106,7 +106,7 @@ int main(int argc, char * argv[]) {
     matrix out_matrix(shape, shape);
     std::vector<std::thread> thrs;
     for (size_t i =0; i<thread_num; i++)
-       thrs.push_back(std::thread(anyFunc, &tasks, &all_matrix, &out_matrix, shape));
+        thrs.push_back(std::thread(anyFunc, &tasks, &all_matrix, &out_matrix, shape));
 
     //std::thread thr2(anyFunc, &tasks, &all_matrix, &out_matrix, shape);
 
@@ -119,7 +119,9 @@ int main(int argc, char * argv[]) {
 
 
         auto id = all_matrix.size();
+        all_matrix_lock.lock();
         all_matrix.push_back(A);
+        all_matrix_lock.unlock();
         for (size_t i = 0; i < id; i++) {
             tasks.push(std::pair<int, int>(i, id));
             tasks.push(std::pair<int, int>(id, i));
@@ -129,6 +131,8 @@ int main(int argc, char * argv[]) {
     }
     file.close();
     tasks.done = true;
+
+
 
     //anyFunc( &tasks, all_matrix, &out_matrix, shape);
     for (size_t i =0; i<thread_num; i++)
