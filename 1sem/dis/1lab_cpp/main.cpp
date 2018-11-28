@@ -54,8 +54,8 @@ public:
 
 
 std::mutex out_lock;
-std::mutex all_matrix_lock;
-void anyFunc(block_write_queue * q, std::vector<matrix*> *data_ptr, matrix * out_matrix, int shape) {
+
+void calculator(block_write_queue * q, std::vector<matrix*> *data_ptr, matrix * out_matrix, int shape) {
     std::vector<matrix*>& data =  *data_ptr;
 
     //std::cout<<"thread function started" << std::endl;
@@ -113,7 +113,7 @@ int main(int argc, char * argv[]) {
     matrix out_matrix(shape, shape);
     std::vector<std::thread> thrs;
     for (size_t i =0; i<thread_num; i++)
-        thrs.push_back(std::thread(anyFunc, &tasks, &all_matrix, &out_matrix, shape));
+        thrs.push_back(std::thread(calculator, &tasks, &all_matrix, &out_matrix, shape));
 
     //std::thread thr2(anyFunc, &tasks, &all_matrix, &out_matrix, shape);
 
@@ -140,19 +140,9 @@ int main(int argc, char * argv[]) {
     tasks.done = true;
 
 
-
-    //anyFunc( &tasks, all_matrix, &out_matrix, shape);
     for (size_t i =0; i<thread_num; i++)
        thrs[i].join();
 
-//    for (size_t g = 0; g < all_matrix.size(); g++)
-//        for (size_t i = 0; i < shape; i++) {
-//            for (size_t j = 0; j < shape; j++) {
-//                int elem = all_matrix[g].data[i * shape + j];
-//                std::cout << elem << " ";
-//            }
-//            std::cout << std::endl;
-//        }
 
     auto end = std::chrono::system_clock::now();
     std::chrono::duration<double> diff = end-start;
@@ -168,13 +158,3 @@ int main(int argc, char * argv[]) {
         std::cout << std::endl;
     }
     }
-
-
-
-
-
-
-//int main() {
- //   std::cout << "Hello, World!" << std::endl;
- //   return 0;
-//}
