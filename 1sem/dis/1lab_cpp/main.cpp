@@ -20,11 +20,10 @@ struct matrix{
 };
 
 
-//template <typename T>
 class block_write_queue{
     std::queue<std::pair<int,int>> data;
     std::mutex w_lock;
-    //std::mutex r_tasks;
+    int counter=0;
 
 public:
     bool done = false;
@@ -47,30 +46,27 @@ public:
     void push(std::pair<int,int> e){
         w_lock.lock();
         data.push(e);
+        counter++;
         have_tasks = true;
         w_lock.unlock();
     }
 };
 
 
-std::mutex out_lock;
-
-void calculator(block_write_queue * q, std::vector<matrix*> *data_ptr, matrix * out_matrix, int shape) {
+void calculator(block_write_queue * q, std::vector<matrix*> *data_ptr, matrix * out_matrix, int shape, int thr_id) {
     std::vector<matrix*>& data =  *data_ptr;
-
-    //std::cout<<"thread function started" << std::endl;
+    std::chrono::duration<double> helpfull_time;
+    std::chrono::duration<double> useless_time;
+    std::cout << "Thread "<< thr_id << " started." << std::endl;
     while (true){
-        //std::cout<<"thread start task" << std::endl;
+        auto start = std::chrono::system_clock::now();
         if (q->have_tasks) {
             std::pair<int, int> *task = q->pop();
             if (not task)
                 continue;
             matrix result_matrix = matrix(shape, shape);
-
-            //all_matrix_lock.unlock();
             matrix *xm = data[task->first];
             matrix *ym = data[task->second];
-            //all_matrix_lock.unlock();
             for (size_t i = 0; i < shape; i++)
                 for (size_t j = 0; j < shape; j++) {
                     int c = 0;
@@ -81,68 +77,80 @@ void calculator(block_write_queue * q, std::vector<matrix*> *data_ptr, matrix * 
                     }
                     result_matrix.data[i * shape + j] = c;
                 }
-            out_lock.lock();
+
             for (size_t i = 0; i < shape; i++)
                 for (size_t j = 0; j < shape; j++)
                     out_matrix->data[i * shape + j] += result_matrix.data[i * shape + j];
-            out_lock.unlock();
 
-        } else if (q->done)
+        helpfull_time += (std::chrono::system_clock::now() - start);
+        } else if (q->done){
+            std::cout << "Thread "<< thr_id << " done. " << std::endl << "work time=" \
+            << helpfull_time.count() << " ( " << helpfull_time.count()/(helpfull_time.count() + useless_time.count()) << std::endl;
             return;
+        }
+        else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            useless_time += (std::chrono::system_clock::now() - start);
+        }
     }
-
 }
 
 
-
-int main(int argc, char * argv[]) {
-    int shape = 4;
+void round_robin(int shape, int thread_num, std::string fname, matrix &out_matrix){
     std::vector<matrix*> all_matrix;
-    block_write_queue tasks;
 
-    if (argc != 3){
-        std::cout << "mul thr_num file_name"<< std::endl;
-        exit(1);
+    std::vector<std::thread> thrs;
+    std::vector<*block_write_queue> tasks_queues;
+    std::vector<*out_matrix> out_matrix_for_thrs;
+    for (size_t i =0; i<thread_num; i++){
+        block_write_queue tasks;
+        matrix out_m; 
+        tasks_queues.push_back(&tasks);
+        out_matrix_for_thrs.push_back(&out_m);
+        thrs.push_back(std::thread(calculator, &tasks, &all_matrix, &out_m, shape, i));
     }
 
-    auto start = std::chrono::system_clock::now();
-    int thread_num = atoi(argv[1]);
-    std::string fname(argv[2]);
-
-
-    matrix out_matrix(shape, shape);
-    std::vector<std::thread> thrs;
-    for (size_t i =0; i<thread_num; i++)
-        thrs.push_back(std::thread(calculator, &tasks, &all_matrix, &out_matrix, shape));
-
-    //std::thread thr2(anyFunc, &tasks, &all_matrix, &out_matrix, shape);
-
     std::ifstream file(fname);
+    cur_process_id=0;
     while ( not file.eof()) {
         matrix *A = new matrix(shape, shape);
         for (size_t i = 0; i < shape; i++)
             for (size_t j = 0; j < shape; j++)
                 file >> A->data[i * shape + j];
 
-
-        auto id = all_matrix.size();
-        //all_matrix_lock.lock();
+        auto matrix_id = all_matrix.size();
         all_matrix.push_back(A);
-        //all_matrix_lock.unlock();
-        for (size_t i = 0; i < id; i++) {
-            tasks.push(std::pair<int, int>(i, id));
-            tasks.push(std::pair<int, int>(id, i));
-        }
-
-
+        for (size_t i = 0; i < matrix_id; i++) {
+            tasks_queues[cur_process_id]->push(std::pair<int, int>(i, matrix_id));
+            cur_process_id = (cur_process_id + 1) % thread_num;
+            tasks_queues[cur_process_id]->push(std::pair<int, int>(matrix_id, i));
+            cur_process_id = (cur_process_id + 1) % thread_num;
+        }     
     }
     file.close();
     tasks.done = true;
 
-
     for (size_t i =0; i<thread_num; i++)
-       thrs[i].join();
+        thrs[i].join();
+        for (size_t k = 0; k < shape; k++)
+            for (size_t l = 0; l < shape; l++)
+                out_matrix.data[k * shape + l] += out_matrix_for_thrs[i]->data[k * shape + l];
+}
 
+
+int main(int argc, char * argv[]) {
+    if (argc != 3){
+        std::cout << "mul thread_num file_name"<< std::endl;
+        exit(1);
+    }
+
+    auto start = std::chrono::system_clock::now();
+    int shape = 4;
+    int thread_num = atoi(argv[1]);
+    std::string fname(argv[2]);
+
+    matrix out_matrix(shape, shape);
+    round_robin(shape, thread_num, fname, out_matrix);
 
     auto end = std::chrono::system_clock::now();
     std::chrono::duration<double> diff = end-start;
@@ -157,4 +165,4 @@ int main(int argc, char * argv[]) {
         }
         std::cout << std::endl;
     }
-    }
+}
