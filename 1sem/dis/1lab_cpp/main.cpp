@@ -57,7 +57,7 @@ void calculator(block_write_queue * q, std::vector<matrix*> *data_ptr, matrix * 
     std::vector<matrix*>& data =  *data_ptr;
     std::chrono::duration<double> helpfull_time;
     std::chrono::duration<double> useless_time;
-    std::cout << "Thread "<< thr_id << " started." << std::endl;
+    std::cout << "Thread "+ std::to_string(thr_id) + " started.\n";
     while (true){
         auto start = std::chrono::system_clock::now();
         if (q->have_tasks) {
@@ -84,8 +84,11 @@ void calculator(block_write_queue * q, std::vector<matrix*> *data_ptr, matrix * 
 
         helpfull_time += (std::chrono::system_clock::now() - start);
         } else if (q->done){
-            std::cout << "Thread "<< thr_id << " done. " << std::endl << "work time=" \
-            << helpfull_time.count() << " ( " << helpfull_time.count()/(helpfull_time.count() + useless_time.count()) << std::endl;
+            std::cout << "Thread "+ std::to_string(thr_id) + " done.\nwork time "
+            + std::to_string(helpfull_time.count()) + "sec. ("
+            + std::to_string(helpfull_time.count()/(helpfull_time.count() + useless_time.count()) * 100) + "%)\n"
+            + "useless time: " + std::to_string(helpfull_time.count()) + " sec. ("
+            + std::to_string(useless_time.count()/(helpfull_time.count() + useless_time.count()) * 100) + "%)\n";
             return;
         }
         else {
@@ -100,18 +103,18 @@ void round_robin(int shape, int thread_num, std::string fname, matrix &out_matri
     std::vector<matrix*> all_matrix;
 
     std::vector<std::thread> thrs;
-    std::vector<*block_write_queue> tasks_queues;
-    std::vector<*out_matrix> out_matrix_for_thrs;
+    std::vector<block_write_queue*> tasks_queues;
+    std::vector<matrix*> out_matrix_for_thrs;
     for (size_t i =0; i<thread_num; i++){
-        block_write_queue tasks;
-        matrix out_m; 
-        tasks_queues.push_back(&tasks);
-        out_matrix_for_thrs.push_back(&out_m);
-        thrs.push_back(std::thread(calculator, &tasks, &all_matrix, &out_m, shape, i));
+        block_write_queue *tasks = new block_write_queue;
+        matrix *out_m = new matrix(shape, shape);
+        tasks_queues.push_back(tasks);
+        out_matrix_for_thrs.push_back(out_m);
+        thrs.push_back(std::thread(calculator, tasks, &all_matrix, out_m, shape, i));
     }
 
     std::ifstream file(fname);
-    cur_process_id=0;
+    int cur_process_id=0;
     while ( not file.eof()) {
         matrix *A = new matrix(shape, shape);
         for (size_t i = 0; i < shape; i++)
@@ -128,13 +131,15 @@ void round_robin(int shape, int thread_num, std::string fname, matrix &out_matri
         }     
     }
     file.close();
-    tasks.done = true;
+    for ( size_t i = 0 ;i <thread_num ; i++)
+        tasks_queues[i]->done = true;
 
-    for (size_t i =0; i<thread_num; i++)
+    for (size_t i =0; i<thread_num; i++) {
         thrs[i].join();
         for (size_t k = 0; k < shape; k++)
             for (size_t l = 0; l < shape; l++)
                 out_matrix.data[k * shape + l] += out_matrix_for_thrs[i]->data[k * shape + l];
+    }
 }
 
 
