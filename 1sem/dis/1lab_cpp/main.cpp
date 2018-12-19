@@ -30,13 +30,16 @@ public:
     bool have_tasks = false;
     block_write_queue() = default;
     std::pair<int,int>* pop(){
-        w_lock.lock();
-        if (data.empty()){
-            have_tasks = false;
-            w_lock.unlock();
-            return NULL;
-        }
+        //w_lock.lock();
+//        if (data.empty()){
+//            have_tasks = false;
+//            w_lock.unlock();
+//            return NULL;
+//        }
+       // w_lock.unlock();
+
         std::pair<int,int> *e = new std::pair<int,int>(data.front());
+        w_lock.lock();
         data.pop();
         have_tasks = not data.empty();
         w_lock.unlock();
@@ -46,9 +49,9 @@ public:
     void push(std::pair<int,int> e){
         w_lock.lock();
         data.push(e);
-        counter++;
         have_tasks = true;
         w_lock.unlock();
+        counter++;
     }
 };
 
@@ -58,12 +61,13 @@ void calculator(block_write_queue * q, std::vector<matrix*> *data_ptr, matrix * 
     std::chrono::duration<double> helpfull_time;
     std::chrono::duration<double> useless_time;
     std::cout << "Thread "+ std::to_string(thr_id) + " started.\n";
+    auto hard_start_time = std::chrono::system_clock::now();
     while (true){
-        auto start = std::chrono::system_clock::now();
         if (q->have_tasks) {
             std::pair<int, int> *task = q->pop();
             if (not task)
                 continue;
+            auto start = std::chrono::system_clock::now();
             matrix result_matrix = matrix(shape, shape);
             matrix *xm = data[task->first];
             matrix *ym = data[task->second];
@@ -84,16 +88,17 @@ void calculator(block_write_queue * q, std::vector<matrix*> *data_ptr, matrix * 
 
         helpfull_time += (std::chrono::system_clock::now() - start);
         } else if (q->done){
+            std::chrono::duration<double> thread_live_time = std::chrono::system_clock::now()-hard_start_time;
+            std::chrono::duration<double> useless_time = thread_live_time - helpfull_time;
             std::cout << "Thread "+ std::to_string(thr_id) + " done.\nwork time "
             + std::to_string(helpfull_time.count()) + "sec. ("
-            + std::to_string(helpfull_time.count()/(helpfull_time.count() + useless_time.count()) * 100) + "%)\n"
-            + "useless time: " + std::to_string(helpfull_time.count()) + " sec. ("
-            + std::to_string(useless_time.count()/(helpfull_time.count() + useless_time.count()) * 100) + "%)\n";
+            + std::to_string(helpfull_time.count()/(thread_live_time.count()) * 100) + "%)\n"
+            + "useless time: " + std::to_string(useless_time.count()) + " sec. ("
+            + std::to_string(useless_time.count()/(thread_live_time.count()) * 100) + "%)\n";
             return;
         }
         else {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            useless_time += (std::chrono::system_clock::now() - start);
         }
     }
 }
