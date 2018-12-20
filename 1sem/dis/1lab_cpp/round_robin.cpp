@@ -11,39 +11,24 @@
 #include "matix_reader.h"
 #include <chrono>
 
-
-struct matrix{
-    std::vector<int> data;
-    matrix(int columns, int rows) :
-            data(columns*rows)
-    {}
-};
-
+namespace Round_Robin {
 
 class block_write_queue{
     std::queue<std::pair<int,int>> data;
     std::mutex w_lock;
     int counter=0;
-    int common_counter=0;
 
 public:
     bool done = false;
     bool have_tasks = false;
     block_write_queue() = default;
     std::pair<int,int>* pop(){
-        //w_lock.lock();
-//        if (data.empty()){
-//            have_tasks = false;
-//            w_lock.unlock();
-//            return NULL;
-//        }
-       // w_lock.unlock();
+
 
         std::pair<int,int> *e = new std::pair<int,int>(data.front());
         w_lock.lock();
         data.pop();
-        common_counter-=1;
-        have_tasks =  common_counter>0;
+        have_tasks = not data.empty();
         w_lock.unlock();
         return e;
     };
@@ -51,13 +36,9 @@ public:
     void push(std::pair<int,int> e){
         w_lock.lock();
         data.push(e);
-        common_counter+=1;
         have_tasks = true;
         w_lock.unlock();
         counter++;
-    }
-    int get_loaded(){
-        return common_counter;
     }
     int get_processed_count(){
         return counter;
@@ -112,18 +93,8 @@ void calculator(block_write_queue * q, std::vector<matrix*> *data_ptr, matrix * 
     }
 }
 
-int get_least_loaded_id(std::vector<block_write_queue*> &tasks_queues, int thread_num){
-    int min_load=tasks_queues[0]->get_loaded();
-    int id =0;
-    for (size_t i=1; i<thread_num; i++)
-        if (min_load > tasks_queues[i]->get_loaded()) {
-            min_load = tasks_queues[i]->get_loaded();
-            id = i;
-        }
-    return id;
-}
 
-void least_loaded(int shape, int thread_num, std::string fname, matrix &out_matrix){
+void round_robin(int shape, int thread_num, std::string fname, matrix &out_matrix){
     std::vector<matrix*> all_matrix;
 
     std::vector<std::thread> thrs;
@@ -148,10 +119,10 @@ void least_loaded(int shape, int thread_num, std::string fname, matrix &out_matr
         auto matrix_id = all_matrix.size();
         all_matrix.push_back(A);
         for (size_t i = 0; i < matrix_id; i++) {
-            cur_process_id = get_least_loaded_id(tasks_queues, thread_num);
             tasks_queues[cur_process_id]->push(std::pair<int, int>(i, matrix_id));
-            cur_process_id = get_least_loaded_id(tasks_queues, thread_num);
+            cur_process_id = (cur_process_id + 1) % thread_num;
             tasks_queues[cur_process_id]->push(std::pair<int, int>(matrix_id, i));
+            cur_process_id = (cur_process_id + 1) % thread_num;
         }     
     }
     file.close();
@@ -164,38 +135,9 @@ void least_loaded(int shape, int thread_num, std::string fname, matrix &out_matr
             for (size_t l = 0; l < shape; l++)
                 out_matrix.data[k * shape + l] += out_matrix_for_thrs[i]->data[k * shape + l];
     }
-
     std::cout << "TASKS:" <<std::endl;
     for (size_t i =0; i < thread_num; i++)
         std::cout << "Thread " << i << " processed " <<tasks_queues[i]->get_processed_count() << std::endl;
 }
 
-
-int main(int argc, char * argv[]) {
-    if (argc != 3){
-        std::cout << "mul thread_num file_name"<< std::endl;
-        exit(1);
-    }
-
-    auto start = std::chrono::system_clock::now();
-    int shape = 4;
-    int thread_num = atoi(argv[1]);
-    std::string fname(argv[2]);
-
-    matrix out_matrix(shape, shape);
-    least_loaded(shape, thread_num, fname, out_matrix);
-
-    auto end = std::chrono::system_clock::now();
-    std::chrono::duration<double> diff = end-start;
-    std::cout << "Time: " << diff.count() << " s\n";
-
-    std::cout << "---RESULTS-----" <<std::endl;
-
-    for (size_t i = 0; i < shape; i++) {
-        for (size_t j = 0; j < shape; j++) {
-            int elem = out_matrix.data[i * shape + j];
-            std::cout << elem << " ";
-        }
-        std::cout << std::endl;
-    }
 }
